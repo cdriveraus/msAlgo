@@ -1,0 +1,20 @@
+Package: msAlgo
+Title: Mindsteps dev algo
+Version: 0.0.5
+Authors@R: 
+    person(given = "Charles",
+           family = "Driver",
+           role = c("aut", "cre"),
+           email = "charles.driver@ibe.uzh.ch",
+           comment = c(ORCID = "0000-0002-4174-2970"))
+Description: Fits item response theory models to big data.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.1
+Depends: 
+    R (>= 3.5.0),
+    data.table,
+    bigIRT
+SystemRequirements: GNU make
