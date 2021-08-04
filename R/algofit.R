@@ -1,6 +1,6 @@
 msFit <- function(jsontextdat,text=FALSE){
   if(text) return(jsontextdat)
-  else({
+  if!text){
   adat=as.data.table(jsonlite::fromJSON(jsontextdat))
   Ability=bigIRT::fitIRT(
     dat = adat,
@@ -8,6 +8,7 @@ msFit <- function(jsontextdat,text=FALSE){
     item = 'item',scale = 'Scale',pl = 2,
     cores=1,  priors = TRUE,ebayes = FALSE,itemDat = adat,
     normalise = FALSE,dropPerfectScores = FALSE)$pars$Ability
+  return(Ability)
   }
 }
 
