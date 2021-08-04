@@ -1,6 +1,6 @@
 msFit <- function(jsontextdat,text=FALSE){
   if(text) return(jsontextdat)
-  if!text){
+  if(!text){
   adat=as.data.table(jsonlite::fromJSON(jsontextdat))
   Ability=bigIRT::fitIRT(
     dat = adat,
