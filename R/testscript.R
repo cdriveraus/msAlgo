@@ -1,5 +1,8 @@
 if(FALSE){
 
+  # test --------------------------------------------------------------------
+
+
   set.seed(1)
   library(future)
   # plan(strategy = 'multisession',cores=6)
@@ -59,10 +62,12 @@ if(FALSE){
   persons[,(scaleNames):= 0]
   setwd("C:/Users/Driver/Seafile/mpib/msAlgo/")
   # save('persons',file = './data/persons.rda')
-  save(items,file = './data/items.rda')
+  # save(items,file = './data/items.rda')
+  rm(items)
+  items <- msAlgo::items
   a=Sys.time()
 
-  system2(Sys.which("Rscript"), paste0(" --vanilla ", getwd(),"/algoserver.R"),wait = FALSE) #start socket server
+  # system2(Sys.which("Rscript"), paste0(" --vanilla ", getwd(),"/algoserver.R"),wait = FALSE) #start socket server
 
   for(ai in 1:Nassesments){
     person <- sample(1:nrow(persons),1) #random person selected
@@ -72,29 +77,53 @@ if(FALSE){
     for(i in 1:Nperassessment){
 
       #select an item to present
-      system(intern = TRUE,paste0('curl http://localhost/ocpu/library/msAlgo/R/selectItem -d "items&',scale))
+      a=system(intern = TRUE,
+        paste0(
+          'curl http://localhost/ocpu/library/msAlgo/R/selectItem/json -d "items=items&scalename=',
+          'as.character(quote(',paste0(scale),'))',
+          '&ability=',unlist(persons[person,scale,with=FALSE]),'"')
+      )
+      a=a[length(a)]
+      a= gsub('[\"','',a,fixed=TRUE)
+      a=gsub('\"]','',a,fixed=TRUE)
+      itemcode=a
+
+
       # source(file = 'algoselect.R')
       # itemcode <-  selectItem(items[Scale %in% scale & !Item %in% adat$item,],
       #                         ability = unlist(persons[person,scale,with=FALSE]),
       #                         targetease = 0.1,samplesize = ifelse(ai > (Nassesments/2), 1000,1))
-      # item <- (algoNewItem(person=person, scale=scale, targetease=.1)
+
 
       #assessment data
-      rowdat <- cbind(data.table(id=person, trueability=unlist(truepersons[person,scale,with=FALSE]), AssessmentItemCount=i,
-        item=itemcode, score=as.integer(NA), ability=0.0,items[Item %in% itemcode,]),pcovs[person,])
+      rowdat <- cbind(data.table(
+        id=person,
+        trueability=unlist(truepersons[person,scale,with=FALSE]),
+        AssessmentItemCount=i,
+        item=itemcode,
+        score=as.integer(NA),
+        ability=0.0,
+        items[Item %in% itemcode,]),
+        pcovs[person,])
+
       if(i==1) adat <- rowdat else adat <- rbind(adat,rowdat)
 
       #get response from student
-      adat[i,score:= simResponse(items[Item %in% itemcode,],unlist(truepersons[person,scale,with=FALSE])) ]
+      adat[i,score:= bigIRT:::simResponse(items[Item %in% itemcode,],unlist(truepersons[person,scale,with=FALSE])) ]
 
       #update ability est
       a1=Sys.time()
-      source(file = 'algofit.R')
+      # source(file = 'algofit.R')
+      Ability=bigIRT::fitIRT(dat = adat,score='score',id = 'id',
+        item = 'item',scale = 'Scale',pl = 2,
+        cores=1,  priors = TRUE,ebayes = FALSE,itemDat = adat,
+        normalise = FALSE,dropPerfectScores = FALSE)$pars$Ability
+
       print(Sys.time()-a1)
 
 
-      persons[person,(scale):=fit$pars$Ability]
-      adat[nrow(adat),ability:=fit$pars$Ability]
+      persons[person,(scale):=Ability]
+      adat[nrow(adat),ability:=Ability]
 
 
 
@@ -122,24 +151,27 @@ if(FALSE){
 
     }
 
-print(ai)
-print(Sys.time()-a)
-# if(ai==1) record <- data.table(AssessmentID=ai,adat) else record <- rbind(record,data.table(AssessmentID=ai,adat))
+    print(ai)
+    print(Sys.time()-a)
+    if(ai==1) record <- data.table(AssessmentID=ai,adat) else record <- rbind(record,data.table(AssessmentID=ai,adat))
 
-}
-record <- lapply(adatlist,value)
-print(Sys.time()-a)
+  }
+  record <- lapply(adatlist,value)
+  print(Sys.time()-a)
 
-require(ggplot2)
-ggplot(record,aes(y=ability, x=AssessmentItemCount,colour=factor(AssessmentID)))+
-  geom_line()+
-  theme_bw()+
-  geom_hline(data = record,
-    aes(yintercept=trueability,colour=factor(AssessmentID)),size=1,alpha=.5,linetype=2)
+  require(ggplot2)
+  ggplot(record,aes(y=ability, x=AssessmentItemCount,colour=factor(AssessmentID)))+
+    geom_line()+
+    theme_bw()+
+    geom_hline(data = record,
+      aes(yintercept=trueability,colour=factor(AssessmentID)),size=1,alpha=.5,linetype=2)
 
-record[,Random:=ifelse(AssessmentID > (Nassesments/2),TRUE,FALSE)]
-record[,RMSE:=sqrt(mean((trueability-ability)^2)),by=interaction(Random,AssessmentItemCount)]
+  record[,Random:=ifelse(AssessmentID > (Nassesments/2),TRUE,FALSE)]
+  record[,RMSE:=sqrt(mean((trueability-ability)^2)),by=interaction(Random,AssessmentItemCount)]
 
-ggplot(record,aes(y=RMSE,colour=Random,x=AssessmentItemCount))+geom_line()+theme_bw()
+  ggplot(record,aes(y=RMSE,colour=Random,x=AssessmentItemCount))+geom_line()+theme_bw()
+
+  # end test ----------------------------------------------------------------
+
 
 }
