@@ -2,13 +2,14 @@ msFit <- function(jsontextdat,text=FALSE){
   if(text) return(jsontextdat)
   if(!text){
   adat=as.data.table(jsonlite::fromJSON(jsontextdat))
-  Ability=bigIRT::fitIRT(
+  fit=bigIRT::fitIRT(
     dat = adat,
     score='score',id = 'id',
     item = 'item',scale = 'Scale',pl = 2,
     cores=1,  priors = TRUE,ebayes = FALSE,itemDat = adat,
-    normalise = FALSE,dropPerfectScores = FALSE)$pars$Ability
-  return(Ability)
+    normalise = FALSE,dropPerfectScores = FALSE,
+    dohess=TRUE)
+  return(c(fit$pars$Ability,sqrt(fit$parcov[1,1])))
   }
 }
 
