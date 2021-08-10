@@ -1,39 +1,54 @@
 if(FALSE){
 
-  # test --------------------------------------------------------------------
 
+# Simulate items and persons ----------------------------------------------
 
   set.seed(1)
+
+  #use future package for testing concurrent handling of multiple requests
   library(future)
-  # plan(strategy = 'multisession',cores=6)
+  plan(strategy = 'sequential',workers=4)
+
+  #If using opencpu server, otherwise just run locally
+  opencpu <- FALSE
+  restrserve=TRUE
+
   require(data.table)
   require(bigIRT)
+  require(msAlgo)
+
   scaleNames = c('maths','english')
-  sc <- t(chol(matrix(c(2,1,1,.8),2,2,dimnames = list(scaleNames,NULL))))
+  sc <- t(chol(matrix(c(2,1,1,.8),2,2,dimnames = list(scaleNames,NULL)))) #scale covariance cholesky factor
 
-  N=100
+  Npersons=100
 
-  pcovs=data.table(age=seq(-4,4,length.out=N),
-    ses=rnorm(N,0,2),
-    height=rnorm(N,0,.2))
+  #person covariates
+  pcovs=data.table(age=seq(-4,4,length.out=Npersons),
+    ses=rnorm(Npersons,0,2),
+    height=rnorm(Npersons,0,.2))
 
-  persons=bigIRT:::simPersons(N=N,
+  #simulate persons
+  persons=bigIRT:::simPersons(N=Npersons,
     mu=c(0,.3),
     scaleChol=sc,
     covs=pcovs,
     beta=matrix(c(.3,.2,0, .4, .3, 0),byrow=TRUE,2,3)
   )
 
+  #limited checks on generated persons
   cor(persons)
   cov2cor(sc)
   plot(persons$age,persons$maths)
 
 
-  NperScale=1000
+  NperScale=1000 #number of items per scale
+
+  #item covariates
   icovs=data.table(grade=seq(-4,4,length.out=NperScale),
     clarity=rnorm(NperScale,0,2),
     specificity=rnorm(NperScale,0,.2))
 
+  #generate items
   items <- bigIRT:::simItems(NperScale = 1000,scaleNames = colnames(sc),logAmu = bigIRT:::inv_log1p_exp(c(3,3)),
     logASD = c(0,.2),Bmu = c(0,0),BSD = c(3,4),logitCmu = c(-10,-10),logitCSD = c(0,0),
     covs = icovs,
@@ -42,136 +57,158 @@ if(FALSE){
     logitCbeta = matrix(c(.1,0,.1, 0,-.2,0),byrow=TRUE,2,3)
   )
 
-  items$C <- 0 #2pl model
+  items$C <- 0 #for 2pl model
 
-  items$Item <- paste0('i_',items$Scale,'_',1:nrow(items))
+  items$Item <- paste0('i_',items$Scale,'_',1:nrow(items)) #name items
 
+  #limited testing of item generation
   itemmat=as.matrix(items[,c('A','B','C',colnames(icovs)),with=FALSE])
   cor(itemmat)
   cor(itemmat[1:NperScale,])
   cor(itemmat[(NperScale+1):(NperScale*2),])
-
   plot(icovs$clarity[1:NperScale],items$A[1:NperScale])
 
 
-  #simulation loops
+  #simulation loops -- samples random person, selects item, progresses through assessment and repeats.
 
-  Nassesments <- 5
-  Nperassessment <- 50
+  Nassesments <- 5 #number of assessment sessions
+  Nperassessment <- 50 #number of items per assessment
   truepersons <- copy(persons)
   persons[,(scaleNames):= 0]
-  setwd("C:/Users/Driver/Seafile/mpib/msAlgo/")
+
+  ## save items to msAlgo package when new item set desired.
+  # setwd("C:/Users/Driver/Seafile/mpib/msAlgo/")
   # save('persons',file = './data/persons.rda')
   # save(items,file = './data/items.rda')
-  rm(items)
+
+  rm(items) #ensure that we are using items saved to msAlgo package
   items <- msAlgo::items
-  a=Sys.time()
 
-  # system2(Sys.which("Rscript"), paste0(" --vanilla ", getwd(),"/algoserver.R"),wait = FALSE) #start socket server
+  Nsims <-4 #number of (concurrent) simulations to do
+  starttime <- Sys.time()
 
-  for(ai in 1:Nassesments){
-    person <- sample(1:nrow(persons),1) #random person selected
-    scale <- sample(scaleNames,1)
+  record <- list() #placeholder for saved output
 
-    adat <- data.table(Item='xxxxxxxxx') #blank placeholder
-    for(i in 1:Nperassessment){
+  #simulation loop
+  for(simi in 1:Nsims){ #for every sim
+    record[[simi]] <- future({ #start calculating the following loop
 
-      #select an item to present
-      a=system(intern = TRUE,
-        paste0(
-          'curl http://localhost/ocpu/library/msAlgo/R/selectItem/json -d "items=items&scalename=',
-          'as.character(quote(',paste0(scale),'))',
-          '&ability=',unlist(persons[person,scale,with=FALSE]),'"')
-      )
-      a=a[length(a)]
-      a= gsub('[\"','',a,fixed=TRUE)
-      a=gsub('\"]','',a,fixed=TRUE)
-      itemcode=a
+      for(ai in 1:Nassesments){ #for every assessment, sample random person and scale to test
+        person <- sample(1:nrow(persons),1)
+        scale <- sample(scaleNames,1)
+        adat <- data.table(Item='xxxxxxxxx') #blank placeholder
 
+        for(i in 1:Nperassessment){ #for every item in the assessment
 
-      # source(file = 'algoselect.R')
-      # itemcode <-  selectItem(items[Scale %in% scale & !Item %in% adat$item,],
-      #                         ability = unlist(persons[person,scale,with=FALSE]),
-      #                         targetease = 0.1,samplesize = ifelse(ai > (Nassesments/2), 1000,1))
+          #select an item to present
+          itemselectstarttime=Sys.time() #time this request
 
+          if(opencpu) itemcode=c(jsonlite::fromJSON(system(intern = TRUE,ignore.stderr = TRUE,
+            paste0(
+              'curl http://localhost/ocpu/library/msAlgo/R/selectItem/json -d "items=items&scalename=',
+              '\'',paste0(scale),'\'',
+              '&ability=',unlist(persons[person,scale,with=FALSE]),'"')
+          )))
 
-      #assessment data
-      rowdat <- cbind(data.table(
-        id=person,
-        trueability=unlist(truepersons[person,scale,with=FALSE]),
-        AssessmentItemCount=i,
-        item=itemcode,
-        score=as.integer(NA),
-        ability=0.0,
-        items[Item %in% itemcode,]),
-        pcovs[person,])
+          if(restrserve) itemcode=c(jsonlite::fromJSON(system(intern = TRUE,ignore.stderr = TRUE,
+            paste0(
+              'curl localhost:8080/selectItem_rserve?scalename=',
+              '\'',paste0(scale),'\'',
+              '&ability=',unlist(persons[person,scale,with=FALSE]))
+          )))
 
-      if(i==1) adat <- rowdat else adat <- rbind(adat,rowdat)
+          if(!opencpu & !restrserve) itemcode <- msAlgo:::selectItem(items=msAlgo::items,scalename =scale,
+            ability=unlist(persons[person,scale,with=FALSE]))
 
-      #get response from student
-      adat[i,score:= bigIRT:::simResponse(items[Item %in% itemcode,],unlist(truepersons[person,scale,with=FALSE])) ]
-
-      #update ability est
-      a1=Sys.time()
-      # source(file = 'algofit.R')
-      Ability=bigIRT::fitIRT(dat = adat,score='score',id = 'id',
-        item = 'item',scale = 'Scale',pl = 2,
-        cores=1,  priors = TRUE,ebayes = FALSE,itemDat = adat,
-        normalise = FALSE,dropPerfectScores = FALSE)$pars$Ability
-
-      print(Sys.time()-a1)
+          print(Sys.time()-itemselectstarttime)
 
 
-      persons[person,(scale):=Ability]
-      adat[nrow(adat),ability:=Ability]
+          #collect assessment data for this specific test item
+          rowdat <- cbind(data.table(
+            id=person,
+            AssessmentID=paste0('sim',simi,'_',ai),
+            trueability=unlist(truepersons[person,scale,with=FALSE]),
+            AssessmentItemCount=i,
+            item=itemcode,
+            score=as.integer(NA),
+            ability=0.0,
+            abilitySD=0,
+            items[Item %in% itemcode,]),
+            pcovs[person,])
+
+          if(i==1) adat <- rowdat else adat <- rbind(adat,rowdat) #combine assessment data
+
+          #simulate response from student
+          adat[i,score:= bigIRT:::simResponse(items[Item %in% itemcode,],unlist(truepersons[person,scale,with=FALSE])) ]
+
+          #update ability estimate and get standard error
+          startabilitytime=Sys.time()
+
+          if(opencpu){
+            fitarg=jsonlite::toJSON(adat)
+            fitarg <- gsub('"','\\"',fitarg,fixed=TRUE)
+            Ability=c(jsonlite::fromJSON(
+              system(intern = TRUE,ignore.stderr = TRUE,
+                paste0('curl http://localhost/ocpu/library/msAlgo/R/msFit/json -d "text=F&jsontextdat=\'',
+                  fitarg,'\'"')
+              )
+            ))
+          }
+
+          if(restrserve)
+
+          if(!opencpu & !restrserve) Ability <- msAlgo:::msFit(jsonlite::toJSON(adat))
+
+          print(Sys.time()-startabilitytime)
 
 
+          persons[person,(scale):=Ability[1]]
+          adat[nrow(adat),ability:=Ability[1]]
+          adat[nrow(adat),abilitySD:=Ability[2]]
 
-      #update ability estimate of student
-      # save(adat,file='adat.rda')
 
-      # cmd <- paste0("setwd('",getwd(),"');
-      #   load(file='adat.rda');
-      # fit <- fitIRT(dat = adat,score='score',id = 'id',item = 'item',scale = 'Scale',pl = 2,cores=1,
-      #   # AbilitySD = 5,
-      #   priors = TRUE,ebayes = FALSE,
-      #   # personPreds = colnames(pcovs), #need fixed betas here or else unidentified
-      #   itemDat = adat,normalise = FALSE,dropPerfectScores = FALSE);
-      #   1+3
-      #     "
-      # )
-      #
-      # cmd <- gsub('\\n','',cmd)
-      # cmd <- gsub(' ','',cmd)
-      #
-      # system.time(
-      #   system(command = paste0(Sys.getenv("R_HOME"),'/bin/','Rscript --vanilla ',getwd(),'/algofit.R'),
-      #          intern = T,show.output.on.console = TRUE)
-      # )
+        }
 
-    }
+        if(ai==1) record <- (adat) else record <- rbind(record,adat)
 
-    print(ai)
-    print(Sys.time()-a)
-    if(ai==1) record <- data.table(AssessmentID=ai,adat) else record <- rbind(record,data.table(AssessmentID=ai,adat))
-
+      }
+      return(record)
+    })
   }
-  record <- lapply(adatlist,value)
+
+  record2 <- value(record) #wait for simulation to finish then put output in record2
+
+  endtime <- Sys.time()
+  print(endtime-starttime)
+
+
+
+  # plots -------------------------------------------------------------------
+
+
+
+  record <- do.call(rbind,record2)
   print(Sys.time()-a)
 
+  recordsml <- record[1:(4*Nperassessment),]
+  recordsml[,simID:=interaction(factor(AssessmentID),factor(id))]
+
   require(ggplot2)
-  ggplot(record,aes(y=ability, x=AssessmentItemCount,colour=factor(AssessmentID)))+
+  ggplot(recordsml,aes(y=ability, x=AssessmentItemCount, fill=simID,colour=simID))+
     geom_line()+
     theme_bw()+
-    geom_hline(data = record,
-      aes(yintercept=trueability,colour=factor(AssessmentID)),size=1,alpha=.5,linetype=2)
+    geom_hline(aes(yintercept=trueability,colour=simID),size=1,alpha=.5,linetype=2)+
+    geom_ribbon(mapping = aes(ymin=ability-1.96*abilitySD,ymax=ability+1.96*abilitySD),alpha=.1)
 
-  record[,Random:=ifelse(AssessmentID > (Nassesments/2),TRUE,FALSE)]
-  record[,RMSE:=sqrt(mean((trueability-ability)^2)),by=interaction(Random,AssessmentItemCount)]
-
-  ggplot(record,aes(y=RMSE,colour=Random,x=AssessmentItemCount))+geom_line()+theme_bw()
+  #
+  # #mse
+  # record[,Random:=ifelse(AssessmentID > (Nassesments/2),TRUE,FALSE)]
+  # record[,RMSE:=sqrt(mean((trueability-ability)^2)),by=interaction(Random,AssessmentItemCount)]
+  #
+  # ggplot(record,aes(y=RMSE,colour=Random,x=AssessmentItemCount))+geom_line()+theme_bw()
 
   # end test ----------------------------------------------------------------
+
 
 
 }

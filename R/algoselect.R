@@ -14,7 +14,7 @@ if(F) itemcode <- bigIRT:::selectItem(items,
 #' @export
 #'
 #' @examples
-selectItem <- function(items, scalename,ability, targetease=.1, samplesize=1){
+selectItem <- function(scalename,ability, items=msAlgo::items, targetease=.1, samplesize=1){
   isub=items[Scale %in% scalename,]
   sample(isub$Item[
     order(abs(ability-isub$B-targetease))[1:min(nrow(isub),samplesize)]
