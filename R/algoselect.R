@@ -13,8 +13,12 @@ if(F) itemcode <- bigIRT:::selectItem(items,
 #' @return
 #' @export
 #'
+#' @import data.table bigIRT
+#'
 #' @examples
 selectItem <- function(scalename,ability, items=msAlgo::items, targetease=.1, samplesize=1){
+  if(!'data.table' %in% class(items)) stop('items should be a data.table!')
+  # items=data.frame(items)
   isub=items[Scale %in% scalename,]
   sample(isub$Item[
     order(abs(ability-isub$B-targetease))[1:min(nrow(isub),samplesize)]

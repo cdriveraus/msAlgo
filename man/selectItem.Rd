@@ -4,7 +4,13 @@
 \alias{selectItem}
 \title{Title}
 \usage{
-selectItem(items, scalename, ability, targetease = 0.1, samplesize = 1)
+selectItem(
+  scalename,
+  ability,
+  items = msAlgo::items,
+  targetease = 0.1,
+  samplesize = 1
+)
 }
 \arguments{
 \item{samplesize}{}
