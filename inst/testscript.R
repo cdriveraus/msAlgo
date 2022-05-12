@@ -3,15 +3,16 @@
 
 
 
-# set.seed(1)
+set.seed(1)
 
 #use future package for testing concurrent handling of multiple requests
 library(future)
 plan(strategy = 'multisession',workers=8) #set to 'sequential' for non parallel.
 
-#If using opencpu or restrserve server set TRUE, otherwise just runs locally
+#If using server set TRUE, otherwise just runs locally
 opencpu <- FALSE
 restrserve <- FALSE
+trifork <- TRUE
 
 require(data.table)
 require(bigIRT)
@@ -127,6 +128,11 @@ for(ri in 1:Nruns){
   if(ri==1) dcito <- ctheta else dcito <- rbind(dcito,ctheta)
 }
 
+#output to disk
+save(dcito,file="C:/Users/Driver/Seafile/mpib/msAlgo/cito/dcito.rda")
+save(items,file="C:/Users/Driver/Seafile/mpib/msAlgo/cito/items.rda")
+
+
 ggplot(data = dcito[as.numeric(id) < 2,],mapping = aes(y=Ability,x=Nitems,colour=SimID,fill=SimID))+
   geom_line()+
   geom_hline(aes(yintercept=trueability,colour=SimID),size=1,alpha=.5,linetype=2)+
@@ -146,6 +152,9 @@ plot(dcito[SimID %in% SimID[1],rmse],ylab='rmse',xlab='Nitems')
 #get person data from cito
 persons = persons[1:length(unique(dcito$SimID)),]
 persons$maths=dcito[!duplicated(SimID),trueability]
+
+
+
 
 
 ### end cito
